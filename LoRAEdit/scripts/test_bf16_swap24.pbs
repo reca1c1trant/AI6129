@@ -1,0 +1,79 @@
+#!/bin/bash
+#PBS -N test_bf16_s24
+#PBS -l select=1:ngpus=1:ncpus=4:mem=64gb
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/test_bf16_swap24.log
+#PBS -q normal
+
+cd /home/users/ntu/song0304/code/LoRAEdit
+source activate loraedit
+
+# Create a temp config based on hair config but with only 5 epochs
+cat > /tmp/test_bf16_swap24.toml << 'TOMLEOF'
+output_dir = '/tmp/test_bf16_s24_lora'
+dataset = '/scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_hair/configs/dataset.toml'
+
+epochs = 5
+micro_batch_size_per_gpu = 1
+pipeline_stages = 1
+gradient_accumulation_steps = 1
+gradient_clipping = 1
+warmup_steps = 0
+
+eval_every_n_epochs = 1000000
+eval_before_first_step = true
+eval_micro_batch_size_per_gpu = 1
+eval_gradient_accumulation_steps = 1
+
+save_every_n_epochs = 5
+checkpoint_every_n_minutes = 1000000000
+activation_checkpointing = 'unsloth'
+partition_method = 'parameters'
+save_dtype = 'bfloat16'
+caching_batch_size = 1
+steps_per_print = 1
+video_clip_mode = 'single_beginning'
+blocks_to_swap = 24
+
+[model]
+type = 'wan'
+ckpt_path = '/scratch/users/ntu/song0304/checkpoints/Wan2.1-I2V-14B-480P'
+dtype = 'bfloat16'
+transformer_dtype = 'bfloat16'
+timestep_sample_method = 'uniform'
+
+[adapter]
+type = 'lora'
+rank = 16
+dtype = 'bfloat16'
+exclude_linear_modules = ["k_img", "v_img"]
+
+[optimizer]
+type = 'AdamW8bitKahan'
+lr = 0.001
+betas = [0.9, 0.99]
+weight_decay = 0.01
+stabilize = true
+TOMLEOF
+
+echo "Config written. Key settings:"
+echo "  transformer_dtype: bfloat16"
+echo "  blocks_to_swap: 24"
+echo "=== START: $(date) ==="
+
+# Monitor GPU memory every 5 seconds in background
+nvidia-smi --query-gpu=timestamp,memory.used,memory.total --format=csv -l 5 > /tmp/gpu_mem_swap24.csv 2>&1 &
+GPU_MON_PID=$!
+
+time deepspeed --num_gpus 1 train.py --deepspeed --config /tmp/test_bf16_swap24.toml
+
+kill $GPU_MON_PID 2>/dev/null
+
+echo ""
+echo "=== GPU Memory Usage ==="
+cat /tmp/gpu_mem_swap24.csv
+
+echo ""
+echo "=== GPU Peak Memory ==="
+sort -t',' -k2 -n /tmp/gpu_mem_swap24.csv | tail -5

@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N infer_r4_batch
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -l walltime=4:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/inference_hair_run4_batch.log
+#PBS -P personal-song0304
+#PBS -q normal
+
+cd /home/users/ntu/song0304/code/LoRAEdit
+source activate loraedit
+
+echo "=== Batch inference: single model load, native LoRA hot-swap ==="
+echo "=== START: $(date) ==="
+
+python inference_batch.py \
+  --model_root_dir /scratch/users/ntu/song0304/checkpoints/Wan2.1-I2V-14B-480P \
+  --data_dir /scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_hair \
+  --epochs 50,100,150,200 \
+  --prompt "a video scene" \
+  --compare \
+  --num_persistent_params 10000000000
+
+echo ""
+echo "=== DONE: $(date) ==="

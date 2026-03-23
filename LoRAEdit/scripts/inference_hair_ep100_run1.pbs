@@ -1,0 +1,74 @@
+#!/bin/bash
+#PBS -N infer_hair_old
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -l walltime=06:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/inference_hair_ep100_run1.log
+#PBS -P personal-song0304
+#PBS -q normal
+
+cd /home/users/ntu/song0304/code/LoRAEdit
+source activate loraedit
+
+# Test old epoch100 from first training run (20260228) - this checkpoint was confirmed good
+# Using hardcoded path to bypass find_max_epoch_lora which would pick the latest run
+python3 -c "
+import sys
+sys.path.insert(0, '.')
+from inference_lowmem import *
+
+model_root_dir = '/scratch/users/ntu/song0304/checkpoints/Wan2.1-I2V-14B-480P'
+data_dir = '/scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_hair'
+
+# Force use old epoch100 from first training run
+lora_path = '/scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_hair/lora/20260228_22-18-28/epoch100/adapter_model.safetensors'
+input_image_path = find_input_image(data_dir)
+pseudo_video_path = os.path.join(data_dir, 'inference_rgb.mp4')
+mask_video_path = os.path.join(data_dir, 'inference_mask.mp4')
+
+print(f'LoRA: {lora_path}')
+print(f'Edited img: {input_image_path}')
+
+model_manager = ModelManager(device='cpu', torch_dtype=torch.bfloat16)
+model_manager.load_model(os.path.join(model_root_dir, 'models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth'), torch_dtype=torch.float32)
+model_manager.load_model(os.path.join(model_root_dir, 'models_t5_umt5-xxl-enc-bf16.pth'), torch_dtype=torch.bfloat16)
+gc.collect()
+model_manager.load_model(os.path.join(model_root_dir, 'Wan2.1_VAE.pth'), torch_dtype=torch.bfloat16)
+gc.collect()
+
+dit = load_dit_shard_by_shard(model_root_dir, torch_dtype=torch.bfloat16)
+diffusion_files = sorted(glob.glob(os.path.join(model_root_dir, 'diffusion_pytorch_model*.safetensors')))
+model_manager.model.append(dit)
+model_manager.model_path.append(diffusion_files)
+model_manager.model_name.append('wan_video_dit')
+gc.collect()
+
+model_manager.load_lora(lora_path, lora_alpha=1.0)
+pipe = WanVideoPipeline.from_model_manager(model_manager, torch_dtype=torch.bfloat16, device='cuda')
+pipe.enable_vram_management(num_persistent_param_in_dit=0)
+
+generated_prompt = 'a video scene'
+
+import json
+meta_path = os.path.join(data_dir, 'video_meta.json')
+with open(meta_path) as f:
+    source_fps = json.load(f).get('effective_fps', 25.0)
+
+# Compare mode
+original_frame_path = os.path.join(data_dir, 'source_frames', '00000.png')
+original_image = Image.open(original_frame_path)
+input_image = Image.open(input_image_path).convert('RGB')
+
+print('=== Inference 1/2: original first frame ===')
+video_original = run_inference_once(pipe, generated_prompt, original_image, pseudo_video_path, mask_video_path)
+save_video_imageio(video_original, os.path.join(data_dir, 'output_original_ep100run1.mp4'), fps=source_fps)
+
+print('=== Inference 2/2: edited first frame ===')
+video_edited = run_inference_once(pipe, generated_prompt, input_image, pseudo_video_path, mask_video_path)
+save_video_imageio(video_edited, os.path.join(data_dir, 'output_edited_ep100run1.mp4'), fps=source_fps)
+
+save_comparison_video(video_original, video_edited, os.path.join(data_dir, 'comparison_ep100run1.mp4'), fps=source_fps)
+print('Done!')
+"
+
+echo "Inference done at $(date)"

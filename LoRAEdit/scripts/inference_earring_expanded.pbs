@@ -1,0 +1,64 @@
+#!/bin/bash
+#PBS -N ear_exp_inf
+#PBS -l select=1:ngpus=1:ncpus=4:mem=64gb
+#PBS -l walltime=02:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/inference_earring_expanded.log
+#PBS -P personal-song0304
+#PBS -q normal
+
+eval "$(/app/apps/miniforge3/25.3.1/condabin/conda shell.bash hook)"
+conda activate loraedit
+
+echo "=== Earring Expanded Mask Inference + Comparison ==="
+echo "=== START: $(date) ==="
+
+DATA_DIR="/scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_earring_expanded"
+OUT_DIR="/scratch/users/ntu/song0304/loraedit_exp/experiments/earring_expanded_mask/results"
+mkdir -p "${OUT_DIR}"
+
+cd /home/users/ntu/song0304/code/LoRAEdit
+
+# === Step 1: Inference ep100 (--compare: original + edited) ===
+echo "=== Inference: earring expanded mask, epoch 100 ==="
+python inference_lowmem.py \
+    --model_root_dir /scratch/users/ntu/song0304/checkpoints/Wan2.1-I2V-14B-480P \
+    --data_dir "${DATA_DIR}" \
+    --epoch 100 \
+    --compare \
+    --output_name comparison_expanded_ep100.mp4 \
+    --prompt "a video scene"
+
+# === Step 2: Create GT video from source frames (JPG) ===
+echo "=== Creating GT video ==="
+GT_VIDEO="${OUT_DIR}/gt.mp4"
+ffmpeg -y -framerate 25 \
+    -i "${DATA_DIR}/source_frames/%05d.jpg" \
+    -c:v libx264 -pix_fmt yuv420p -crf 18 \
+    "${GT_VIDEO}"
+
+# === Step 3: Comparison 1 — GT vs Original ===
+echo "=== Comparison: GT vs Original ==="
+ORIGINAL="${DATA_DIR}/output_original_expanded_ep100.mp4"
+ffmpeg -y \
+    -i "${GT_VIDEO}" \
+    -i "${ORIGINAL}" \
+    -filter_complex "[0:v]drawtext=text='GT':fontsize=36:fontcolor=white:x=20:y=20[left];[1:v]drawtext=text='Original (Expanded Mask ep100)':fontsize=36:fontcolor=white:x=20:y=20[right];[left][right]hstack=inputs=2" \
+    -c:v libx264 -pix_fmt yuv420p -crf 18 \
+    "${OUT_DIR}/comparison_gt_vs_original.mp4"
+
+# === Step 4: Comparison 2 — Original vs Edited ===
+echo "=== Comparison: Original vs Edited ==="
+EDITED="${DATA_DIR}/output_edited_expanded_ep100.mp4"
+ffmpeg -y \
+    -i "${ORIGINAL}" \
+    -i "${EDITED}" \
+    -filter_complex "[0:v]drawtext=text='Original':fontsize=36:fontcolor=white:x=20:y=20[left];[1:v]drawtext=text='Edited (Expanded Mask ep100)':fontsize=36:fontcolor=white:x=20:y=20[right];[left][right]hstack=inputs=2" \
+    -c:v libx264 -pix_fmt yuv420p -crf 18 \
+    "${OUT_DIR}/comparison_original_vs_edited.mp4"
+
+echo ""
+echo "=== Output files ==="
+ls -lh "${OUT_DIR}/"
+ls -lh "${DATA_DIR}/output_"*.mp4
+echo "=== END: $(date) ==="

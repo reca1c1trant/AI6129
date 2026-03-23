@@ -1,0 +1,15 @@
+#!/bin/bash
+#PBS -N profile_v2
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/profile_loading_v2.log
+#PBS -P personal-song0304
+#PBS -q normal
+
+cd /home/users/ntu/song0304/code/LoRAEdit
+source activate loraedit
+
+python tools/profile_loading_v4.py
+
+echo "Profile V2 done at $(date)"

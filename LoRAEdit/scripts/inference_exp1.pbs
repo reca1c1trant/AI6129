@@ -1,0 +1,20 @@
+#!/bin/bash
+#PBS -N loraedit_inf1
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/exp1_inference.log
+#PBS -P personal-song0304
+#PBS -q normal
+
+# === Environment ===
+cd /home/users/ntu/song0304/code/LoRAEdit
+source activate loraedit
+
+# === Inference (memory-efficient) ===
+python inference_lowmem.py \
+  --model_root_dir /scratch/users/ntu/song0304/checkpoints/Wan2.1-I2V-14B-480P \
+  --data_dir /scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_baseline \
+  --prompt "A young man with golden blonde hair talking in an indoor setting, wearing a white t-shirt, with glasses on the table"
+
+echo "Inference done at $(date)"

@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -N test_fastload
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -l walltime=02:00:00
+#PBS -j oe
+#PBS -o /scratch/users/ntu/song0304/loraedit_exp/logs/test_fast_load.log
+#PBS -P personal-song0304
+#PBS -q normal
+
+cd /home/users/ntu/song0304/code/LoRAEdit
+source activate loraedit
+
+# Use a temporary config with 1 epoch just to test loading speed
+python -c "
+import toml, tempfile, os, time
+
+# Read original config
+config = toml.load('/scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_hair/configs/training.toml')
+config['epochs'] = 1
+config['save_every_n_epochs'] = 1000000
+config['eval_before_first_step'] = False
+
+# Write temp config
+tmp = '/tmp/test_fast_load.toml'
+with open(tmp, 'w') as f:
+    toml.dump(config, f)
+print(f'Temp config: {tmp}')
+print(f'Epochs: {config[\"epochs\"]}')
+"
+
+# Time the actual training with 1 epoch
+echo "=== Starting training (1 epoch) at $(date) ==="
+time NCCL_P2P_DISABLE="1" NCCL_IB_DISABLE="1" \
+deepspeed --num_gpus=1 train.py \
+  --deepspeed \
+  --config /tmp/test_fast_load.toml
+
+echo "=== Done at $(date) ==="
