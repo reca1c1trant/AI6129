@@ -1,5 +1,0 @@
-enable_ar_bucket = false
-
-[[directory]]
-path = '/scratch/users/ntu/song0304/loraedit_exp/processed_data/V7_hair/traindata'
-num_repeats = 1
